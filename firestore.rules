@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: id, name, role, email
+    //
+    // Collection: sessions
+    // Fields: id, studentId, studentName, startTime, status, trustScore, lastHeartbeat
+    //
+    // Collection: sessions/{sessionId}/violations
+    // Fields: id, sessionId, studentId, type, timestamp, details
+    //
+    // Collection: submissions
+    // Fields: sessionId, studentId, answers, submittedAt
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "mygamesprabhu@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // Domain Validators
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'role']) &&
+             data.id is string && data.name is string &&
+             data.role in ['student', 'admin'];
+    }
+
+    function isValidSession(data) {
+      return data.keys().hasAll(['studentId', 'status', 'trustScore']) &&
+             data.studentId is string &&
+             data.status in ['active', 'submitted', 'terminated'] &&
+             data.trustScore is number;
+    }
+
+    function isValidViolation(data) {
+      return data.keys().hasAll(['sessionId', 'studentId', 'type', 'timestamp']) &&
+             data.sessionId is string && data.studentId is string &&
+             data.type is string && data.timestamp is string;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isValidUser(request.resource.data);
+      allow read, write: if isAdmin();
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.studentId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidSession(request.resource.data) && request.resource.data.studentId == request.auth.uid;
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.studentId == request.auth.uid && isValidSession(request.resource.data));
+      
+      match /violations/{violationId} {
+        allow read: if isAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/sessions/$(sessionId)).data.studentId == request.auth.uid);
+        allow create: if isAuthenticated() && isValidViolation(request.resource.data) && request.resource.data.studentId == request.auth.uid;
+      }
+    }
+
+    match /submissions/{submissionId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.studentId == request.auth.uid;
+    }
+  }
+}

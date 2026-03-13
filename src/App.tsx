@@ -11,7 +11,13 @@ const LoginPage: React.FC = () => {
   const [id, setId] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<'student' | 'admin'>('student');
-  const { login } = useExam();
+  const { login, loginWithGoogle, isAuthReady } = useExam();
+
+  if (!isAuthReady) return (
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6">
@@ -44,6 +50,19 @@ const LoginPage: React.FC = () => {
         </div>
 
         <div className="space-y-6">
+          <button
+            onClick={() => loginWithGoogle(role)}
+            className="w-full bg-white text-black font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-3 hover:bg-white/90"
+          >
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+            Sign in with Google
+          </button>
+
+          <div className="relative py-2">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
+            <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#050505] px-2 text-white/30 font-bold tracking-widest">Or use ID</span></div>
+          </div>
+
           <div className="space-y-2">
             <label className="text-xs font-bold text-white/40 uppercase tracking-widest ml-1">
               {role === 'student' ? 'Student ID' : 'Teacher ID'}
@@ -88,7 +107,7 @@ const LoginPage: React.FC = () => {
 };
 
 const MainApp: React.FC = () => {
-  const { user, sessionId, startExam } = useExam();
+  const { user, sessionId, startExam, isAuthReady, logout } = useExam();
   const [view, setView] = useState<'student' | 'admin'>('student');
 
   useEffect(() => {
@@ -96,6 +115,12 @@ const MainApp: React.FC = () => {
       setView('admin');
     }
   }, [user]);
+
+  if (!isAuthReady) return (
+    <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
 
   if (!user) return <LoginPage />;
 
@@ -139,9 +164,12 @@ const MainApp: React.FC = () => {
                 <p className="text-sm font-bold">{user.name}</p>
                 <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest">{user.id}</p>
               </div>
-              <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-indigo-400">
-                <User size={20} />
-              </div>
+              <button 
+                onClick={logout}
+                className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
+              >
+                <LogIn size={20} className="rotate-180" />
+              </button>
             </div>
           </div>
         </div>

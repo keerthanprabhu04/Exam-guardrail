@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, Clock, Shield, AlertTriangle, Users, Activity } from 'lucide-react';
 
 export const ExamInterface: React.FC = () => {
-  const { trustScore, logViolation, isFaceDetected, setIsFaceDetected, faceCount, violations } = useExam();
+  const { trustScore, logViolation, isFaceDetected, setIsFaceDetected, faceCount, violations, submitExam } = useExam();
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes
@@ -98,10 +98,9 @@ export const ExamInterface: React.FC = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    await submitExam(answers);
     setIsSubmitted(true);
-    // In a real app, we would send the answers to the server here
-    console.log("Exam submitted:", answers);
   };
 
   if (isSubmitted) {

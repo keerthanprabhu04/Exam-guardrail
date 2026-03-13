@@ -1,6 +1,6 @@
 {
-  "name": " Exam Guardrail System",
-  "description": "Integrity Online Exam Monitoring Platform with AI-powered proctoring and real-time trust scoring.",
+  "name": "Exam Guardrail System",
+  "description": "Integrity First Online Exam Monitoring Platform with AI-powered proctoring and real-time trust scoring.",
   "requestFramePermissions": [
     "camera",
     "microphone"

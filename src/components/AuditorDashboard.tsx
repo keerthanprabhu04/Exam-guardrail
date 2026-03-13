@@ -8,7 +8,8 @@ import {
   History, 
   TrendingDown, 
   User,
-  AlertCircle
+  AlertCircle,
+  FileCheck
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -21,7 +22,10 @@ import {
   Legend,
   ArcElement
 } from 'chart.js';
-import { Line, Doughnut } from 'react-chartjs-2';
+import { Line } from 'react-chartjs-2';
+import { QUESTIONS } from '../constants';
+import { collection, onSnapshot, query, orderBy, limit, doc, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 
 ChartJS.register(
   CategoryScale,
@@ -35,39 +39,62 @@ ChartJS.register(
 );
 
 export const AuditorDashboard: React.FC = () => {
-  const { socket } = useExam();
   const [sessions, setSessions] = useState<any[]>([]);
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [violations, setViolations] = useState<any[]>([]);
+  const [submissions, setSubmissions] = useState<any[]>([]);
 
-  const fetchSessions = async () => {
-    const res = await fetch('/api/admin/sessions');
-    const data = await res.json();
-    setSessions(data);
+  useEffect(() => {
+    const q = query(collection(db, 'sessions'), orderBy('startTime', 'desc'), limit(100));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const sessionData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setSessions(sessionData);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const q = query(collection(db, 'submissions'), orderBy('submittedAt', 'desc'), limit(50));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const submissionData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setSubmissions(submissionData);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const fetchViolations = (sessionId: string) => {
+    const q = query(collection(db, 'sessions', sessionId, 'violations'), orderBy('timestamp', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const violationData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setViolations(violationData);
+    });
   };
 
   useEffect(() => {
-    fetchSessions();
-    if (socket) {
-      socket.on('violation_update', () => {
-        fetchSessions();
-      });
+    let unsubscribe: any;
+    if (selectedSession) {
+      unsubscribe = fetchViolations(selectedSession.id);
     }
-    return () => { socket?.off('violation_update'); };
-  }, [socket]);
-
-  const fetchViolations = async (sessionId: string) => {
-    const res = await fetch(`/api/admin/violations/${sessionId}`);
-    const data = await res.json();
-    setViolations(data);
-  };
+    return () => unsubscribe?.();
+  }, [selectedSession]);
 
   const chartData = {
-    labels: sessions.map(s => s.student_name).slice(0, 5),
+    labels: sessions.map(s => s.studentName).slice(0, 5),
     datasets: [
       {
         label: 'Trust Score',
-        data: sessions.map(s => s.trust_score).slice(0, 5),
+        data: sessions.map(s => s.trustScore).slice(0, 5),
         borderColor: '#6366f1',
         backgroundColor: 'rgba(99, 102, 241, 0.5)',
         tension: 0.4,
@@ -95,10 +122,10 @@ export const AuditorDashboard: React.FC = () => {
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {[
-            { label: 'Active Sessions', value: sessions.length, icon: Users, color: 'text-indigo-400' },
-            { label: 'Total Violations', value: sessions.reduce((acc, s) => acc + s.violation_count, 0), icon: ShieldAlert, color: 'text-red-400' },
-            { label: 'Avg Trust Score', value: `${Math.round(sessions.reduce((acc, s) => acc + s.trust_score, 0) / (sessions.length || 1))}%`, icon: Activity, color: 'text-emerald-400' },
-            { label: 'High Risk Students', value: sessions.filter(s => s.trust_score < 60).length, icon: AlertCircle, color: 'text-amber-400' },
+            { label: 'Active Sessions', value: sessions.filter(s => s.status === 'active').length, icon: Users, color: 'text-indigo-400' },
+            { label: 'Submissions', value: submissions.length, icon: FileCheck, color: 'text-emerald-400' },
+            { label: 'Avg Trust Score', value: `${Math.round(sessions.reduce((acc, s) => acc + s.trustScore, 0) / (sessions.length || 1))}%`, icon: Activity, color: 'text-emerald-400' },
+            { label: 'High Risk Students', value: sessions.filter(s => s.trustScore < 60).length, icon: AlertCircle, color: 'text-amber-400' },
           ].map((stat, i) => (
             <div key={i} className="bg-white/5 backdrop-blur-xl border border-white/10 p-6 rounded-2xl">
               <div className="flex justify-between items-start">
@@ -135,40 +162,40 @@ export const AuditorDashboard: React.FC = () => {
                       <User size={20} />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-white">{session.student_name}</p>
-                      <p className="text-[10px] font-medium text-white/30 uppercase tracking-widest">{session.student_id}</p>
+                      <p className="text-sm font-bold text-white">{session.studentName || 'Unknown Student'}</p>
+                      <p className="text-[10px] font-medium text-white/30 uppercase tracking-widest">{session.studentId || 'No ID'}</p>
                     </div>
                   </div>
-                  <div className={cn(
-                    "w-2 h-2 rounded-full animate-pulse",
-                    session.trust_score > 80 ? "bg-emerald-500" : session.trust_score > 50 ? "bg-amber-500" : "bg-red-500"
-                  )} />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex justify-between items-end">
-                    <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Trust Score</span>
-                    <span className={cn(
-                      "text-lg font-black",
-                      session.trust_score > 80 ? "text-emerald-400" : session.trust_score > 50 ? "text-amber-400" : "text-red-400"
-                    )}>{session.trust_score}%</span>
+                    <div className={cn(
+                      "w-2 h-2 rounded-full animate-pulse",
+                      (session.trustScore ?? 100) > 80 ? "bg-emerald-500" : (session.trustScore ?? 100) > 50 ? "bg-amber-500" : "bg-red-500"
+                    )} />
                   </div>
-                  <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                    <motion.div 
-                      initial={{ width: 0 }}
-                      animate={{ width: `${session.trust_score}%` }}
-                      className={cn(
-                        "h-full transition-all duration-1000",
-                        session.trust_score > 80 ? "bg-emerald-500" : session.trust_score > 50 ? "bg-amber-500" : "bg-red-500"
-                      )}
-                    />
+  
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-end">
+                      <span className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Trust Score</span>
+                      <span className={cn(
+                        "text-lg font-black",
+                        (session.trustScore ?? 100) > 80 ? "text-emerald-400" : (session.trustScore ?? 100) > 50 ? "text-amber-400" : "text-red-400"
+                      )}>{session.trustScore ?? 100}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${session.trustScore ?? 100}%` }}
+                        className={cn(
+                          "h-full transition-all duration-1000",
+                          (session.trustScore ?? 100) > 80 ? "bg-emerald-500" : (session.trustScore ?? 100) > 50 ? "bg-amber-500" : "bg-red-500"
+                        )}
+                      />
+                    </div>
                   </div>
-                </div>
 
                 <div className="flex justify-between items-center pt-2">
                   <div className="flex items-center gap-1.5">
                     <ShieldAlert size={12} className="text-white/20" />
-                    <span className="text-[10px] font-bold text-white/40">{session.violation_count} Alerts</span>
+                    <span className="text-[10px] font-bold text-white/40">{session.violationCount || 0} Alerts</span>
                   </div>
                   <button 
                     onClick={() => {
@@ -200,7 +227,8 @@ export const AuditorDashboard: React.FC = () => {
                     <tr>
                       <th className="px-6 py-4">Student</th>
                       <th className="px-6 py-4">Start Time</th>
-                      <th className="px-6 py-4">Violations</th>
+                      <th className="px-6 py-4">Status</th>
+                      <th className="px-6 py-4">Alerts</th>
                       <th className="px-6 py-4">Trust Score</th>
                       <th className="px-6 py-4">Action</th>
                     </tr>
@@ -214,21 +242,32 @@ export const AuditorDashboard: React.FC = () => {
                               <User size={16} />
                             </div>
                             <div>
-                              <p className="font-medium">{session.student_name}</p>
-                              <p className="text-xs text-white/30">{session.student_id}</p>
+                              <p className="font-medium">{session.studentName || 'Unknown Student'}</p>
+                              <p className="text-xs text-white/30">{session.studentId || 'No ID'}</p>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-white/50">
-                          {new Date(session.start_time).toLocaleTimeString()}
+                          {session.startTime ? new Date(session.startTime).toLocaleTimeString() : 'N/A'}
                         </td>
                         <td className="px-6 py-4">
                           <span className={cn(
-                            "px-2 py-1 rounded-md text-xs font-bold",
-                            session.violation_count > 5 ? "bg-red-500/20 text-red-400" : "bg-white/5 text-white/50"
+                            "px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                            session.status === 'submitted' ? "bg-emerald-500/20 text-emerald-400" : "bg-indigo-500/20 text-indigo-400"
                           )}>
-                            {session.violation_count} Events
+                            {session.status || 'active'}
                           </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <ShieldAlert size={14} className={session.violationCount > 0 ? "text-red-400" : "text-white/20"} />
+                            <span className={cn(
+                              "text-sm font-bold",
+                              session.violationCount > 0 ? "text-red-400" : "text-white/40"
+                            )}>
+                              {session.violationCount || 0}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
@@ -236,13 +275,13 @@ export const AuditorDashboard: React.FC = () => {
                               <div 
                                 className={cn(
                                   "h-full rounded-full transition-all duration-1000",
-                                  session.trust_score > 80 ? "bg-emerald-500" : 
-                                  session.trust_score > 50 ? "bg-amber-500" : "bg-red-500"
+                                  (session.trustScore ?? 100) > 80 ? "bg-emerald-500" : 
+                                  (session.trustScore ?? 100) > 50 ? "bg-amber-500" : "bg-red-500"
                                 )}
-                                style={{ width: `${session.trust_score}%` }}
+                                style={{ width: `${session.trustScore ?? 100}%` }}
                               />
                             </div>
-                            <span className="text-sm font-bold">{session.trust_score}%</span>
+                            <span className="text-sm font-bold">{session.trustScore ?? 100}%</span>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -279,24 +318,58 @@ export const AuditorDashboard: React.FC = () => {
               <motion.div 
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-white/5 border border-white/10 p-6 rounded-2xl space-y-4"
+                className="bg-white/5 border border-white/10 p-6 rounded-2xl space-y-6"
               >
                 <div className="flex justify-between items-center">
-                  <h3 className="font-bold">Violation Timeline</h3>
+                  <h3 className="font-bold">Session Details</h3>
                   <button onClick={() => setSelectedSession(null)} className="text-xs text-white/30 uppercase">Close</button>
                 </div>
-                <div className="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
-                  {violations.map((v, i) => (
-                    <div key={i} className="p-3 bg-white/5 rounded-xl border border-white/5 space-y-1">
-                      <div className="flex justify-between items-center">
-                        <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">{v.type}</span>
-                        <span className="text-[10px] text-white/30">{new Date(v.timestamp).toLocaleTimeString()}</span>
-                      </div>
-                      <p className="text-xs text-white/70">{v.details !== "{}" ? v.details : 'Suspicious behavior detected'}</p>
+
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-xs font-bold text-white/30 uppercase tracking-widest mb-3">Violation Timeline</h4>
+                    <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                      {violations.map((v, i) => (
+                        <div key={i} className="p-3 bg-white/5 rounded-xl border border-white/5 space-y-1">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">{v.type}</span>
+                            <span className="text-[10px] text-white/30">{new Date(v.timestamp).toLocaleTimeString()}</span>
+                          </div>
+                          <p className="text-xs text-white/70">
+                            {v.details && Object.keys(v.details).length > 0 
+                              ? Object.entries(v.details).map(([key, val]) => `${key}: ${val}`).join(', ')
+                              : 'Suspicious behavior detected'}
+                          </p>
+                        </div>
+                      ))}
+                      {violations.length === 0 && (
+                        <p className="text-center py-8 text-white/20 text-sm italic">No violations recorded for this session.</p>
+                      )}
                     </div>
-                  ))}
-                  {violations.length === 0 && (
-                    <p className="text-center py-8 text-white/20 text-sm italic">No violations recorded for this session.</p>
+                  </div>
+
+                  {selectedSession.status === 'submitted' && (
+                    <div>
+                      <h4 className="text-xs font-bold text-white/30 uppercase tracking-widest mb-3">Submitted Answers</h4>
+                      <div className="space-y-3 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
+                        {submissions.find(s => s.sessionId === selectedSession.id)?.answers ? (
+                          Object.entries(submissions.find(s => s.sessionId === selectedSession.id).answers).map(([qId, ansIdx]: [string, any]) => {
+                            const question = QUESTIONS.find(q => q.id === parseInt(qId));
+                            return (
+                              <div key={qId} className="p-4 bg-white/5 rounded-xl border border-white/5 space-y-2">
+                                <p className="text-sm font-medium text-white">{question?.text}</p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-bold text-indigo-400 uppercase">Answer:</span>
+                                  <span className="text-xs text-white/70">{question?.options[ansIdx]}</span>
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="text-center py-8 text-white/20 text-sm italic">Loading answers...</p>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
               </motion.div>
