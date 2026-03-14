@@ -9,7 +9,9 @@ import {
   TrendingDown, 
   User,
   AlertCircle,
-  FileCheck
+  FileCheck,
+  MoreVertical,
+  Trash2
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -24,7 +26,7 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { QUESTIONS } from '../constants';
-import { collection, onSnapshot, query, orderBy, limit, doc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, doc, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 ChartJS.register(
@@ -43,6 +45,30 @@ export const AuditorDashboard: React.FC = () => {
   const [selectedSession, setSelectedSession] = useState<any>(null);
   const [violations, setViolations] = useState<any[]>([]);
   const [submissions, setSubmissions] = useState<any[]>([]);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (window.confirm('Are you sure you want to delete this session? This action cannot be undone.')) {
+      try {
+        await deleteDoc(doc(db, 'sessions', sessionId));
+        if (selectedSession?.id === sessionId) {
+          setSelectedSession(null);
+        }
+        setActiveMenu(null);
+      } catch (error) {
+        console.error("Error deleting session:", error);
+        alert("Failed to delete session. Check console for details.");
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenu(null);
+    if (activeMenu) {
+      window.addEventListener('click', handleClickOutside);
+    }
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [activeMenu]);
 
   useEffect(() => {
     const q = query(collection(db, 'sessions'), orderBy('startTime', 'desc'), limit(100));
@@ -166,11 +192,38 @@ export const AuditorDashboard: React.FC = () => {
                       <p className="text-[10px] font-medium text-white/30 uppercase tracking-widest">{session.studentId || 'No ID'}</p>
                     </div>
                   </div>
+                  <div className="flex items-center gap-2">
                     <div className={cn(
                       "w-2 h-2 rounded-full animate-pulse",
                       (session.trustScore ?? 100) > 80 ? "bg-emerald-500" : (session.trustScore ?? 100) > 50 ? "bg-amber-500" : "bg-red-500"
                     )} />
+                    <div className="relative">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveMenu(activeMenu === session.id ? null : session.id);
+                        }}
+                        className="p-1 hover:bg-white/10 rounded-lg transition-colors text-white/30 hover:text-white"
+                      >
+                        <MoreVertical size={16} />
+                      </button>
+                      
+                      {activeMenu === session.id && (
+                        <div className="absolute right-0 mt-2 w-32 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSession(session.id);
+                            }}
+                            className="w-full px-4 py-2 text-left text-xs font-bold text-red-400 hover:bg-red-500/10 flex items-center gap-2 transition-colors"
+                          >
+                            <Trash2 size={14} /> DELETE
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                </div>
   
                   <div className="space-y-2">
                     <div className="flex justify-between items-end">

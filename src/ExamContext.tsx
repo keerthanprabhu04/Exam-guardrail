@@ -122,8 +122,12 @@ export const ExamProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [sessionId]);
 
   const login = async (id: string, name: string, role: 'student' | 'admin') => {
-    // For simple ID login, we'll use the ID as a pseudo-UID in Firestore for now
-    // In a real app, you'd use Firebase Auth for everything
+    // Restrict admin role for manual ID login
+    if (role === 'admin') {
+      alert('Admin login is only permitted via authorized Google account.');
+      return;
+    }
+    
     const userData: User = { id, name, role };
     await setDoc(doc(db, 'users', id), userData);
     setUser(userData);
@@ -131,11 +135,20 @@ export const ExamProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const loginWithGoogle = async (role: 'student' | 'admin') => {
     const result = await signInWithPopup(auth, googleProvider);
+    const email = result.user.email;
+    
+    // Restrict admin role to specific email
+    let finalRole = role;
+    if (role === 'admin' && email !== 'mygamesprabhu@gmail.com') {
+      alert('Access Denied: Only authorized personnel can log in as Admin.');
+      finalRole = 'student';
+    }
+
     const userData: User = {
       id: result.user.uid,
       name: result.user.displayName || 'Anonymous',
-      role,
-      email: result.user.email || undefined
+      role: finalRole,
+      email: email || undefined
     };
     await setDoc(doc(db, 'users', result.user.uid), userData);
     setUser(userData);
